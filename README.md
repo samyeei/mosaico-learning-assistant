@@ -6,6 +6,10 @@
 
 **源码公开 · 禁止商业使用。** 原创代码采用 [PolyForm Noncommercial 1.0.0](LICENSE.md)。允许许可范围内的非商业学习、研究及修改；本项目未授予商业使用权。第三方字体、上游板级适配和依赖保留原许可，见 [第三方声明](THIRD_PARTY_NOTICES.md)。本项目属于 source-available，不以 OSI 开源许可证发布。
 
+## 第一次使用
+
+请从[完整使用教程](docs/USAGE_CN.md)开始：获取百炼 API Key → 手机连接 Learn-Setup → 配置家庭 Wi-Fi / Token → 测试并保存 → 拍题选题与语音提问。下载 ZIP 也附带相同教程。
+
 ## 功能
 
 - 拍题先识别题号；每页三题，点选后才讲解；同图换题与当前题追问。

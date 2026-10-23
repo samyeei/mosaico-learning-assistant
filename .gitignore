@@ -1,0 +1,12 @@
+**/.codex-runs/
+**/build*/
+**/managed_components/
+**/__pycache__/
+*.pyc
+.env
+.env.*
+*.pem
+*.key
+**/sdkconfig
+**/sdkconfig.old
+!LICENSES/**

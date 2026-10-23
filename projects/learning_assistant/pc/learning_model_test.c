@@ -1,0 +1,173 @@
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+#include "learning_model.h"
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+static learning_command_t cmd;
+static learning_message_t msg;
+static learning_snapshot_t view;
+static void state(learning_model_handle_t m, learning_page_t page)
+{ learning_model_snapshot(m, &view); assert(view.page == page); }
+static void status(learning_model_handle_t m)
+{ msg.kind = LEARN_MSG_STATUS; msg.online = msg.configured = true; learning_model_message(m, &msg); }
+int main(void)
+{
+    learning_model_handle_t m = learning_model_create(true); assert(m);
+    assert(learning_model_action(m, LEARN_PHOTO, &cmd)); state(m, LEARN_CAMERA);
+    assert(!learning_model_action(m, LEARN_SEND, &cmd));
+    assert(learning_model_action(m, LEARN_CAPTURE, &cmd)); state(m, LEARN_WAITING);
+    msg.kind = LEARN_MSG_PHOTO; msg.generation = cmd.generation;
+    learning_model_message(m, &msg); state(m, LEARN_CONFIRM);
+    assert(learning_model_action(m, LEARN_SEND, &cmd)); state(m, LEARN_CONFIRM);
+    assert(cmd.kind == LEARN_CMD_NONE); status(m);
+    assert(learning_model_action(m, LEARN_SEND, &cmd)); state(m, LEARN_WAITING);
+    uint32_t old = cmd.generation;
+    assert(learning_model_action(m, LEARN_CANCEL, &cmd)); state(m, LEARN_HOME);
+    msg.kind = LEARN_MSG_ANSWER; msg.generation = old; strcpy(msg.text, "过期回答");
+    learning_model_message(m, &msg); state(m, LEARN_HOME);
+    assert(learning_model_action(m, LEARN_KEY_DOWN, &cmd)); state(m, LEARN_VOICE);
+    assert(cmd.kind == LEARN_CMD_RECORD);
+    assert(!learning_model_action(m, LEARN_KEY_DOWN, &cmd));
+    assert(learning_model_action(m, LEARN_KEY_UP, &cmd)); state(m, LEARN_VOICE);
+    assert(cmd.kind == LEARN_CMD_CANCEL);
+    assert(learning_model_action(m, LEARN_KEY_DOWN, &cmd));
+    assert(!learning_model_tick(m, 600, &cmd));
+    assert(learning_model_action(m, LEARN_KEY_UP, &cmd)); state(m, LEARN_WAITING);
+    assert(cmd.kind == LEARN_CMD_SEND_AUDIO);
+    msg.kind=LEARN_MSG_TRANSCRIPT;msg.generation=cmd.generation;strcpy(msg.text,"请解释这道题");
+    learning_model_message(m,&msg);state(m,LEARN_VOICE_REVIEW);
+    assert(learning_model_action(m,LEARN_SEND_TEXT,&cmd));assert(cmd.kind==LEARN_CMD_SEND_TEXT&&!strcmp(cmd.text,msg.text));
+    assert(!learning_model_action(m,LEARN_SEND_TEXT,&cmd));learning_model_snapshot(m,&view);
+    msg.kind = LEARN_MSG_ANSWER; msg.generation = view.generation;
+    strcpy(msg.text, "【测试】中文长回答：");
+    for(unsigned i=0; i<60; ++i) strcat(msg.text, "解方程时，等式两边必须做相同的运算。\n");
+    learning_model_message(m, &msg); state(m, LEARN_READING);
+    assert(view.page_count > 10);
+    unsigned pages = view.page_count;
+    for(unsigned i=1; i<pages; ++i) {
+        assert(learning_model_action(m, LEARN_NEXT, &cmd)); state(m, LEARN_READING);
+        assert(view.page_index == i);
+        for(unsigned j=0;j<LEARN_LINES;++j) assert(strlen(view.lines[j])<LEARN_LINE_CAP);
+    }
+    assert(!learning_model_action(m, LEARN_NEXT, &cmd));
+    assert(learning_model_action(m, LEARN_PREVIOUS, &cmd));
+    assert(learning_model_action(m, LEARN_EXPLAIN, &cmd)); assert(cmd.kind==LEARN_CMD_EXPLAIN);
+    assert(strstr(cmd.text, "等式")); state(m, LEARN_WAITING);
+    old = cmd.generation;
+    assert(learning_model_action(m, LEARN_OPEN_SETTINGS, &cmd));
+    msg.kind=LEARN_MSG_ANSWER; msg.generation=old; learning_model_message(m,&msg);
+    state(m,LEARN_SETTINGS);
+    assert(learning_model_action(m, LEARN_MUTE, &cmd)); assert(cmd.muted);
+    assert(learning_model_action(m, LEARN_BACK, &cmd));
+    assert(learning_model_action(m, LEARN_KEY_DOWN, &cmd));
+    assert(learning_model_tick(m, LEARN_MAX_RECORD_MS, &cmd)); assert(cmd.kind==LEARN_CMD_CANCEL);
+    state(m,LEARN_VOICE);
+    assert(!learning_model_action(m, LEARN_KEY_DOWN, &cmd));
+    assert(!learning_model_action(m, LEARN_KEY_UP, &cmd));
+    assert(learning_model_action(m, LEARN_KEY_DOWN, &cmd));
+    msg.kind=LEARN_MSG_ANSWER;msg.generation=cmd.generation;
+    msg.text[0]=(char)0xf0;msg.text[1]=0;
+    learning_model_message(m,&msg);state(m,LEARN_ERROR);
+    assert(!view.recording&&!view.speaking);
+    assert(!learning_model_action(m,LEARN_KEY_UP,&cmd));
+    learning_model_snapshot(m,&view);msg.generation=view.generation;
+    memset(msg.text,'W',sizeof(msg.text)-1);msg.text[sizeof(msg.text)-1]=0;
+    learning_model_message(m,&msg);state(m,LEARN_READING);
+    size_t displayed=0;
+    do{
+        learning_model_snapshot(m,&view);
+        for(unsigned i=0;i<LEARN_LINES;++i)displayed+=strlen(view.lines[i]);
+    }while(learning_model_action(m,LEARN_NEXT,&cmd));
+    assert(displayed==sizeof(msg.text)-1);
+    learning_model_delete(m);
+    m=learning_model_create(true);status(m);
+    msg.kind=LEARN_MSG_ANSWER;msg.generation=1;strcpy(msg.text,"原题讲解");learning_model_message(m,&msg);
+    assert(learning_model_action(m,LEARN_ASK,&cmd)&&cmd.followup);state(m,LEARN_VOICE);
+    assert(learning_model_action(m,LEARN_KEY_DOWN,&cmd)&&cmd.followup);
+    assert(!learning_model_tick(m,600,&cmd));
+    assert(learning_model_action(m,LEARN_KEY_UP,&cmd)&&cmd.followup);state(m,LEARN_WAITING);
+    msg.kind=LEARN_MSG_TRANSCRIPT;msg.generation=cmd.generation;strcpy(msg.text,"这是原题追问的识别草稿");learning_model_message(m,&msg);state(m,LEARN_VOICE_REVIEW);
+    assert(learning_model_action(m,LEARN_OPEN_SETTINGS,&cmd));state(m,LEARN_SETTINGS);
+    assert(learning_model_action(m,LEARN_BACK,&cmd));state(m,LEARN_VOICE_REVIEW);
+    assert(learning_model_action(m,LEARN_CANCEL,&cmd)&&cmd.followup);state(m,LEARN_READING);assert(!strcmp(view.lines[0],"原题讲解"));
+    assert(learning_model_action(m,LEARN_BACK,&cmd)&&!cmd.followup);state(m,LEARN_HOME);
+    assert(learning_model_action(m,LEARN_KEY_DOWN,&cmd)&&!cmd.followup);
+    learning_model_delete(m);
+    m=learning_model_create(true);
+    memset(&msg,0,sizeof(msg));msg.kind=LEARN_MSG_STATUS;msg.online=true;msg.configured=true;
+    learning_model_message(m,&msg);learning_model_snapshot(m,&view);assert(view.api_state==LEARN_API_UNKNOWN);
+    msg.api_state=LEARN_API_READY;learning_model_message(m,&msg);learning_model_snapshot(m,&view);assert(view.api_state==LEARN_API_READY);
+    msg.api_state=LEARN_API_ERROR;learning_model_message(m,&msg);learning_model_snapshot(m,&view);assert(view.api_state==LEARN_API_ERROR);
+    msg.online=false;learning_model_message(m,&msg);learning_model_snapshot(m,&view);assert(!view.online&&view.api_state==LEARN_API_UNKNOWN);
+    msg.online=true;learning_model_message(m,&msg);
+    assert(learning_model_action(m,LEARN_KEY_DOWN,&cmd));assert(!learning_model_tick(m,600,&cmd));
+    assert(learning_model_action(m,LEARN_KEY_UP,&cmd));
+    msg.kind=LEARN_MSG_TRANSCRIPT;msg.generation=cmd.generation-1;strcpy(msg.text,"旧回答");learning_model_message(m,&msg);
+    learning_model_snapshot(m,&view);assert(!view.transcript[0]);
+    msg.generation=cmd.generation;
+    for(unsigned i=0;i<100;++i)memcpy(msg.text+3*i,"题",3);msg.text[300]=0;
+    learning_model_message(m,&msg);learning_model_snapshot(m,&view);assert(strlen(view.transcript)==300&&view.page==LEARN_VOICE_REVIEW);
+    assert(learning_model_action(m,LEARN_PHOTO,&cmd));learning_model_snapshot(m,&view);assert(!view.transcript[0]);
+    assert(learning_model_action(m,LEARN_KEY_DOWN,&cmd));learning_model_snapshot(m,&view);assert(!view.transcript[0]);
+    learning_model_delete(m);
+    m=learning_model_create(true);status(m);
+    assert(learning_model_action(m,LEARN_ASK,&cmd));
+    assert(learning_model_action(m,LEARN_VOICE_TOGGLE,&cmd)&&cmd.kind==LEARN_CMD_RECORD);state(m,LEARN_VOICE);assert(view.tap_recording);
+    assert(!learning_model_action(m,LEARN_KEY_DOWN,&cmd));assert(!learning_model_action(m,LEARN_KEY_UP,&cmd));
+    assert(!learning_model_tick(m,600,&cmd));
+    assert(learning_model_action(m,LEARN_VOICE_TOGGLE,&cmd)&&cmd.kind==LEARN_CMD_SEND_AUDIO);state(m,LEARN_WAITING);
+    msg.kind=LEARN_MSG_ANSWER;msg.generation=cmd.generation;strcpy(msg.text,"不应提前收到回答");learning_model_message(m,&msg);state(m,LEARN_WAITING);
+    msg.kind=LEARN_MSG_TRANSCRIPT;
+    strcpy(msg.text,"识别结果，必须等待点击确认发送。\n");
+    for(unsigned i=0;i<10;++i)strcat(msg.text,"完整文字可以翻页检查。\n");
+    learning_model_message(m,&msg);state(m,LEARN_VOICE_REVIEW);assert(view.review_count>1);
+    assert(learning_model_action(m,LEARN_NEXT,&cmd)&&cmd.kind==LEARN_CMD_NONE);
+    assert(learning_model_action(m,LEARN_PREVIOUS,&cmd)&&cmd.kind==LEARN_CMD_NONE);
+    assert(learning_model_action(m,LEARN_SEND_TEXT,&cmd)&&cmd.kind==LEARN_CMD_SEND_TEXT);
+    assert(!strcmp(cmd.text,msg.text));assert(!learning_model_action(m,LEARN_SEND_TEXT,&cmd));
+    assert(learning_model_action(m,LEARN_CANCEL,&cmd));state(m,LEARN_HOME);
+    learning_model_delete(m);
+    m=learning_model_create(true);status(m);assert(learning_model_action(m,LEARN_KEY_DOWN,&cmd));
+    assert(!learning_model_tick(m,600,&cmd));assert(learning_model_action(m,LEARN_KEY_UP,&cmd));
+    msg.kind=LEARN_MSG_TRANSCRIPT;msg.generation=cmd.generation;
+    memset(msg.text,'\n',LEARN_VOICE_TEXT_CAP-1);msg.text[LEARN_VOICE_TEXT_CAP-1]=0;
+    learning_model_message(m,&msg);state(m,LEARN_ERROR);assert(!learning_model_action(m,LEARN_SEND_TEXT,&cmd));
+    learning_model_delete(m);
+    m=learning_model_create(true);status(m);
+    memset(&msg,0,sizeof(msg));msg.kind=LEARN_MSG_ANSWER;msg.generation=1;strcpy(msg.text,"手动朗读应忽略自动朗读开关");
+    learning_model_message(m,&msg);state(m,LEARN_READING);
+    assert(learning_model_action(m,LEARN_MUTE,&cmd));state(m,LEARN_READING);assert(view.muted);
+    unsigned generation=view.generation;
+    assert(learning_model_action(m,LEARN_READ,&cmd)&&cmd.kind==LEARN_CMD_SPEAK&&cmd.muted);
+    assert(cmd.generation>generation);state(m,LEARN_READING);assert(view.muted&&view.speaking);
+    assert(learning_model_action(m,LEARN_READ,&cmd)&&cmd.kind==LEARN_CMD_CANCEL);
+    state(m,LEARN_READING);assert(view.muted&&!view.speaking);
+    assert(learning_model_action(m,LEARN_READ,&cmd)&&cmd.kind==LEARN_CMD_SPEAK);
+    generation=cmd.generation;
+    assert(learning_model_action(m,LEARN_MUTE,&cmd)&&cmd.kind==LEARN_CMD_MUTE);
+    state(m,LEARN_READING);assert(!view.speaking&&!view.muted);
+    assert(learning_model_action(m,LEARN_READ,&cmd)&&cmd.generation>generation);
+    msg.kind=LEARN_MSG_SPEECH_DONE;msg.generation=generation;learning_model_message(m,&msg);
+    state(m,LEARN_READING);assert(view.speaking);
+    learning_model_delete(m);
+    m=learning_model_create(true);status(m);
+    assert(!learning_model_action(m,LEARN_LIGHT,&cmd));
+    assert(learning_model_action(m,LEARN_PHOTO,&cmd));
+    assert(learning_model_action(m,LEARN_LIGHT,&cmd)&&cmd.kind==LEARN_CMD_CAMERA_OPTIONS&&cmd.light);
+    state(m,LEARN_CAMERA);assert(!view.light);
+    memset(&msg,0,sizeof(msg));msg.kind=LEARN_MSG_CAMERA_OPTIONS;msg.generation=cmd.generation;msg.light=true;
+    learning_model_message(m,&msg);state(m,LEARN_CAMERA);assert(view.light);
+    assert(learning_model_action(m,LEARN_FLIP_CAMERA,&cmd)&&cmd.flipped&&cmd.light);
+    msg.flipped=true;learning_model_message(m,&msg);state(m,LEARN_CAMERA);assert(view.flipped);
+    assert(learning_model_action(m,LEARN_CAPTURE,&cmd));
+    msg.kind=LEARN_MSG_PHOTO;learning_model_message(m,&msg);state(m,LEARN_CONFIRM);assert(!view.light&&view.flipped);
+    assert(!learning_model_action(m,LEARN_FLIP_CAMERA,&cmd));
+    assert(learning_model_action(m,LEARN_RETAKE,&cmd)&&cmd.flipped);
+    assert(learning_model_action(m,LEARN_BACK,&cmd));
+    msg.kind=LEARN_MSG_CAMERA_OPTIONS;msg.light=true;learning_model_message(m,&msg);state(m,LEARN_HOME);assert(!view.light);
+    assert(learning_model_action(m,LEARN_PHOTO,&cmd)&&!cmd.flipped);
+    learning_model_delete(m);
+    puts("PASS: camera option acknowledgements, retake/exit, photo confirmation, offline guards, recording, pagination and explicit read");
+    return 0;
+}

@@ -1,0 +1,14 @@
+# Keep the OTA writer only in the retained factory Recovery image. The normal
+# application exposes the enter-Recovery RPC through iris_ota_support_start().
+# CONFIG_ESP_IRIS_OTA is not set
+CONFIG_ESP_IRIS_USB_PRODUCT="ESP-Iris Mosaico learning_assistant"
+CONFIG_ESP_IRIS_HEALTH_TIMEOUT_MS=45000
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL=y
+# TLS servers may send a full-size record (e.g. their certificate chain).
+CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN=16384
+CONFIG_MBEDTLS_SSL_OUT_CONTENT_LEN=4096
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=6
+CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=12
+CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER_NUM=12
+CONFIG_ESP_WIFI_RX_BA_WIN=6

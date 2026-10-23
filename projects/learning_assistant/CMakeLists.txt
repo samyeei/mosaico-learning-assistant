@@ -1,0 +1,26 @@
+cmake_minimum_required(VERSION 3.16)
+if(CMAKE_HOST_WIN32)
+    set(CONFIGDEP_ENABLE OFF CACHE BOOL "Reliable compiler configuration dependencies" FORCE)
+    find_program(learning_host_python NAMES python REQUIRED)
+    execute_process(COMMAND "${learning_host_python}" "${CMAKE_CURRENT_LIST_DIR}/tools/windows_gspc.py" --wrapper
+        OUTPUT_VARIABLE learning_gspc OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
+    set(GSPC_EXECUTABLE "${learning_gspc}" CACHE FILEPATH "Pinned GSPC Windows depfile adapter" FORCE)
+    file(GLOB_RECURSE learning_ui_inputs CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/ui/*")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${learning_ui_inputs})
+endif()
+set(MOSAICO_UTILS_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../submodule/esp-mosaico-utils")
+set(MOSAICO_BSP_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../submodule/esp-mosaico-bsp")
+if(NOT SDKCONFIG)
+    set(SDKCONFIG "${CMAKE_BINARY_DIR}/sdkconfig")
+endif()
+if(NOT SDKCONFIG_DEFAULTS)
+    set(SDKCONFIG_DEFAULTS "sdkconfig.defaults;sdkconfig.application.defaults")
+endif()
+include("${MOSAICO_UTILS_ROOT}/mosaico-tools/cmake/gsp_compiler.cmake")
+list(APPEND EXTRA_COMPONENT_DIRS
+    "${MOSAICO_UTILS_ROOT}/esp-mosaico-recovery/components/esp_mosaico_app_recovery"
+    "${MOSAICO_UTILS_ROOT}/mosaico-tools/components/esp_mosaico_gsp_bundle"
+    "${MOSAICO_UTILS_ROOT}/mosaico-tools/components/esp_mosaico_gsp_iris")
+include("${MOSAICO_UTILS_ROOT}/esp-mosaico-recovery/cmake/mosaico_idf_project.cmake")
+project(learning_assistant VERSION 1.0.0)
+include("${MOSAICO_UTILS_ROOT}/mosaico-tools/cmake/system_update.cmake")

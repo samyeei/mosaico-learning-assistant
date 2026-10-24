@@ -10,3 +10,5 @@ The noncommercial license applies to this project's original code and contributi
 - Device photographs are cropped demonstration materials supplied by the project owner. The illustrative selection screenshot is explicitly test data. Raw footage, room conversations and personal worksheet headers are excluded.
 
 Prebuilt firmware links upstream SDK/components and includes licensed fonts. Its upstream portions retain their licenses; the application author's noncommercial terms apply to the original learning-assistant portions.
+
+For v1.1.0, utils is pinned to `be151ae047014e79a9c7ae0092dd203844499003`, BSP to `5f88b91e1be055d1d3674364123b2779a1758377`, and ESP-GSP to 1.5.1. Current registry and upstream license copies are under `LICENSES/v1.1.0/`; the application lock file lists exact dependency versions. Earlier copies under `LICENSES/upstream/` remain historical notices for v1.0.0 and its derived code. Raylib Lite is not used by the learning-assistant build.

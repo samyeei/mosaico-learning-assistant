@@ -3,17 +3,14 @@ dependencies:
     dependencies:
     - name: idf
       version: '>=6.2'
-    - name: mosaico_boot_splash
-      override_path: ../mosaico_boot_splash
-      version: '*'
     - name: espressif/esp_lvgl_adapter
       public: true
       rules:
-      - if: $CONFIG{BSP_DISPLAY_LVGL_ENABLE} == True
+      - if: $CONFIG{BSP_DISPLAY_ENABLE} == True && $CONFIG{BSP_DISPLAY_LVGL_ENABLE} == True
       version: 0.6.2
     - name: lvgl/lvgl
       rules:
-      - if: $CONFIG{BSP_DISPLAY_LVGL_ENABLE} == True
+      - if: $CONFIG{BSP_DISPLAY_ENABLE} == True && $CONFIG{BSP_DISPLAY_LVGL_ENABLE} == True
       version: ^9.5.0,<9.6.0
     - name: espressif/esp_lcd_co5300
       version: ^2.2
@@ -28,12 +25,12 @@ dependencies:
     - name: espressif/button
       public: true
       version: ^4
-    - name: espressif2022/bmi270
+    - name: espressif/bmi270_sensor
       public: true
-      version: ^1.1.0~2
-    - name: tangyumei3535/bmm150_sensorapi
+      version: ^0.4.1
+    - name: espressif/bmm150
       public: true
-      version: ^1.0.0
+      version: 1.1.0
     - name: espressif/bq27220
       public: true
       version: ^0.1.1~1
@@ -58,7 +55,39 @@ dependencies:
     source:
       path: ../../submodule/esp-mosaico-utils/ESP-Iris/components/esp_iris
       type: local
-    version: 0.1.0
+    version: 0.2.0
+  espressif/bmi270_sensor:
+    component_hash: 1df6b8702743f56ca265928d1ead6a2ae8867a0b313ecd5f9ddde08ba8980c1b
+    dependencies:
+    - name: espressif/cmake_utilities
+      registry_url: https://components.espressif.com
+      require: private
+      version: 0.*
+    - name: espressif/i2c_bus
+      registry_url: https://components.espressif.com
+      require: public
+      version: '*'
+    - name: idf
+      require: private
+      version: '>=5.3'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 0.4.1
+  espressif/bmm150:
+    component_hash: 4bdc8ecc8dee320ba3736abf551bbc89457d61e952bf9a2170bcdc232d3a871c
+    dependencies:
+    - name: espressif/i2c_bus
+      registry_url: https://components.espressif.com
+      require: public
+      version: ^1.5.0
+    - name: idf
+      require: private
+      version: '>=5.3'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.1.0
   espressif/bq27220:
     component_hash: 6f216c63304baed177cd70bdb1654223e55dfbf3ff5a272d793eed3e3be15e6d
     dependencies:
@@ -119,7 +148,7 @@ dependencies:
       type: service
     version: 1.1.0
   espressif/esp-gsp:
-    component_hash: b5c8beb422086e012e7d05372f76e875b48d473ed5ac86b6823d45a365428834
+    component_hash: 595b3b435cc42c830dae327de8944a4d78002133ca9c013729fa04b777c63945
     dependencies:
     - name: espressif/esp_display_present
       registry_url: https://components.espressif.com
@@ -150,7 +179,7 @@ dependencies:
     - esp32s31
     - esp32c5
     - esp32c6
-    version: 1.4.0
+    version: 1.5.1
   espressif/esp_cam_sensor:
     component_hash: 0dd6634a71cc8756f0e46c961476304a23a82db4f4c4deb8aecfa30161d2185c
     dependencies:
@@ -481,7 +510,7 @@ dependencies:
       type: service
     version: 1.1.0
   espressif/libpng:
-    component_hash: d094357a329f78668629d7c9656064b2b0123196eb6d25ca77db3782e0752480
+    component_hash: 9a576d8fbd0ddb29330e1f4c4fe82470b3e0e7eca71ea3bc4dce168d0b1088e3
     dependencies:
     - name: idf
       require: private
@@ -493,7 +522,7 @@ dependencies:
     source:
       registry_url: https://components.espressif.com
       type: service
-    version: 1.6.58~2
+    version: 1.6.59
   espressif/mdns:
     component_hash: 3ba256ac95e07c274be53cbd73f06cb846c403b61e8fbdf1be57bdb79db7a63e
     dependencies:
@@ -585,24 +614,6 @@ dependencies:
       registry_url: https://components.espressif.com
       type: service
     version: 1.3.2~1
-  espressif2022/bmi270:
-    component_hash: 6c6637680a233845d13961f23df39426a7fad9c02c6c289bf8facbb7f8624e22
-    dependencies:
-    - name: espressif/cmake_utilities
-      registry_url: https://components.espressif.com
-      require: private
-      version: 0.*
-    - name: espressif/i2c_bus
-      registry_url: https://components.espressif.com
-      require: private
-      version: 1.*
-    - name: idf
-      require: private
-      version: '>=4.4'
-    source:
-      registry_url: https://components.espressif.com/
-      type: service
-    version: 1.1.0~2
   idf:
     source:
       type: idf
@@ -614,12 +625,6 @@ dependencies:
       registry_url: https://components.espressif.com/
       type: service
     version: 9.5.0
-  mosaico_boot_splash:
-    dependencies: []
-    source:
-      path: ../../submodule/esp-mosaico-bsp/components/mosaico_boot_splash
-      type: local
-    version: 0.1.0
   mosaico_module_camera:
     dependencies:
     - name: idf
@@ -652,20 +657,6 @@ dependencies:
     targets:
     - esp32s31
     version: 0.1.0
-  tangyumei3535/bmm150_sensorapi:
-    component_hash: fe12d09c0ff06fabe9f4ae8fcc54b8b0ee59b936650bd26e8a3742e282fa4465
-    dependencies:
-    - name: espressif2022/bmi270
-      registry_url: https://components.espressif.com
-      require: private
-      version: '*'
-    - name: idf
-      require: private
-      version: '>=4.4'
-    source:
-      registry_url: https://components.espressif.com/
-      type: service
-    version: 1.0.0
 direct_dependencies:
 - esp-mosaico-bsp
 - esp_iris
@@ -675,6 +666,6 @@ direct_dependencies:
 - idf
 - lvgl/lvgl
 - mosaico_module_camera
-manifest_hash: b4fdbdfa59566134e82cfb38b5e8dd9710ea341a5a450700b5fa2ab15b1c5346
+manifest_hash: 6a29c0b6300b775ba0902f01bf114a6519b2429e6bba91655c2c97f66b8ee990
 target: esp32s31
 version: 3.0.0

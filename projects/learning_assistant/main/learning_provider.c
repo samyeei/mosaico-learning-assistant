@@ -8,6 +8,7 @@
 #include "mbedtls/base64.h"
 #include "cJSON.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -66,6 +67,10 @@ static esp_err_t exchange(learning_provider_handle_t p,const char *url,
         else{sprintf(auth,"Bearer %s",key);err=esp_http_client_set_header(client,"Authorization",auth);memset(auth,0,strlen(auth));free(auth);}
     }
     size_t body_size=body?strlen(body):0;
+    ESP_LOGI("learning_provider","Connect budget: internal=%u largest=%u PSRAM=%u body=%u",
+        (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT),
+        (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT),
+        (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),(unsigned)body_size);
     if(err==ESP_OK)err=esp_http_client_open(client,(int)body_size);
     if(err==ESP_OK)stage="upload";
     for(size_t sent=0;err==ESP_OK&&sent<body_size;){

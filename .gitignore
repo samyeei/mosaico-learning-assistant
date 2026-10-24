@@ -1,4 +1,5 @@
 **/.codex-runs/
+**/.gateway/
 **/build*/
 **/managed_components/
 **/__pycache__/

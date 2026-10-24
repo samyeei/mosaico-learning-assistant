@@ -4,4 +4,5 @@
 - [固定依赖、构建与本地测试](BUILD_CN.md)
 - [发布验证范围](RELEASE_CHECKS.md)
 - [固件安装前必读](../firmware/INSTALL_CN.md)
+- [ABI 1 到 Vibe Mode 0.2 的迁移](MIGRATION_02_CN.md)
 - [非商业许可](../LICENSE.md)与[第三方声明](../THIRD_PARTY_NOTICES.md)

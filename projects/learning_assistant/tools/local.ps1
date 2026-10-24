@@ -2,8 +2,8 @@ param([ValidateSet('build','sim','test')][string]$Action = 'build')
 $ErrorActionPreference = 'Stop'
 $projectPath = Split-Path $PSScriptRoot -Parent
 $workspacePath = (Resolve-Path (Join-Path $projectPath '../..')).Path
-$sdkPath = Join-Path $workspacePath '.codex-runs/esp-idf-mosaico'
-$toolPath = Join-Path $workspacePath '.codex-runs/idf-tools'
+$sdkPath = if ($env:IDF_PATH) { $env:IDF_PATH } else { Join-Path $workspacePath '.codex-runs/esp-idf-mosaico' }
+$toolPath = if ($env:IDF_TOOLS_PATH) { $env:IDF_TOOLS_PATH } else { Join-Path $workspacePath '.codex-runs/idf-tools' }
 $revision = git -C $sdkPath rev-parse HEAD
 if ($revision -ne '7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe') { throw 'Pinned ESP-IDF checkout required' }
 $env:IDF_TOOLS_PATH = $toolPath

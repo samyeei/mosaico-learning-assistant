@@ -8,7 +8,7 @@
 
 ## 第一次使用
 
-请从[完整使用教程](docs/USAGE_CN.md)开始：获取百炼 API Key → 手机连接 Learn-Setup → 配置家庭 Wi-Fi / Token → 测试并保存 → 拍题选题与语音提问。下载 ZIP 也附带相同教程。
+请从[安装说明](firmware/INSTALL_CN.md)和[完整使用教程](docs/USAGE_CN.md)开始：安装新版固件 → 获取百炼 API Key → 手机连接 Learn-Setup → 配置家庭 Wi-Fi / Token → 测试并保存 → 拍题选题与语音提问。
 
 ## 功能
 
@@ -22,10 +22,11 @@
 
 ## 下载与兼容性
 
-**当前 v1.0.0 是已实测旧版 ABI 1 / layout 4 固件，不兼容 Vibe Mode 0.2 / ABI 2。请勿降级基础固件或改包版本字符串来安装。**
+**v1.1.0 面向 Vibe Mode 0.2 / ABI 2，使用真实重建的 `esp-iris-system-update/0.2` 完整包。** 平台审核通过并生成安装码后，用户可在 Vibe Mode 中安装；审核状态及六位码以 mosaico.ai 项目页为准。
 
-- [下载手动安装 ZIP](firmware/mosaico-learning-assistant-v1.0.0-manual.zip)：包含原始完整 irisfw、说明与校验值，无六位安装码。
-- [安装前必读](firmware/INSTALL_CN.md)。仅使用匹配的旧版官方工具和基础布局。
+- 新版完整包：`firmware/mosaico-learning-assistant-v1.1.0.irisfw`，校验值见 `firmware/SHA256SUMS.txt`。
+- [安装前必读](firmware/INSTALL_CN.md)；旧版 ABI 1 设备先读[基础固件迁移说明](docs/MIGRATION_02_CN.md)，不能直接跨 ABI 更新。
+- [旧版 v1.0.0 ZIP 存档](firmware/mosaico-learning-assistant-v1.0.0-manual.zip)只适用于匹配的旧环境，不用于新版在线安装；[旧版说明](firmware/LEGACY_V1_INSTALL_CN.md)。
 - [编译与测试](docs/BUILD_CN.md)；[使用说明](docs/USAGE_CN.md)。
 - 设备型号 ESP32-S31 / ESP-Mosaico；摄像头扩展板使用左侧插槽，麦克风/扬声器使用板载硬件。
 
@@ -43,4 +44,4 @@
 
 ## 验证范围
 
-本地七组 C 单元测试、42 个共享原生界面场景已有通过记录；用户已在设备上确认多题选择、同图换题和当前题追问。下载包保留该已验证固件，不把构建或网页上传称为其他设备的实机验收。源码导出后另做发布前验证，见 docs/RELEASE_CHECKS.md。
+新版 GSP 1.5.1 下七组 C 单元测试和 42 个共享原生界面场景通过。硬件验证、固件校验与平台提交状态分别记录在 [发布检查](docs/RELEASE_CHECKS.md)，不把构建或网页上传称为其他设备的实机验收。

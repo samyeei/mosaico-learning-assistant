@@ -1,3 +1,3 @@
-b04f8948cefda9a4249ff923c52555781d27ac222345298ef92ffc26572eeccc  INSTALL_CN.md
 47937e13d8538aa02fb602bc54699b41ef518062224e802a19ac7008c4819664  mosaico-learning-assistant-v1.0.0-manual.zip
 c7fe1a64582830280ff960194fbc235b34f742d1135e3a1316804fc410a3d7f8  mosaico-learning-assistant-v1.0.0.irisfw
+aa268bff06c48797f49e5330c255d65fa1c115d3c927ef70732384d745013c22  mosaico-learning-assistant-v1.1.0.irisfw

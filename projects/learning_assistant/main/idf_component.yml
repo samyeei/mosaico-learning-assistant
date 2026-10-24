@@ -6,7 +6,7 @@ dependencies:
   esp_iris:
     version: "*"
     override_path: "../../../submodule/esp-mosaico-utils/ESP-Iris/components/esp_iris"
-  espressif/esp-gsp: "==1.4.0"
+  espressif/esp-gsp: "==1.5.1"
   # The BSP display adapter uses headers deprecated by LVGL 9.6.
   lvgl/lvgl: "==9.5.0"
   mosaico_module_camera:

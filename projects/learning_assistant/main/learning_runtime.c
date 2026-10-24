@@ -11,6 +11,7 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
+#include "freertos/idf_additions.h"
 #include "esp_heap_caps.h"
 #include "esp_codec_dev.h"
 #include "esp_timer.h"
@@ -23,8 +24,10 @@
 
 enum { RATE=16000, SAMPLE_BYTES=2, AUDIO_CHUNK=512,
        WAV_HEADER=44, AUDIO_CAP=RATE*SAMPLE_BYTES*30,
+       AUDIO_GROW_BYTES=RATE*SAMPLE_BYTES*2,
        COMMAND_DEPTH=8, MESSAGE_DEPTH=4, WORKER_STACK=8192,
        DIAGNOSTIC_SERVICE=0x4c41 };
+static const char *TAG="learning_runtime";
 struct runtime_t {
     QueueHandle_t commands,messages;
     SemaphoreHandle_t audio_lock;
@@ -46,6 +49,7 @@ struct runtime_t {
     unsigned applied_volume;
     learning_api_state_t api_state,last_api_state;
     uint8_t *wav;
+    size_t wav_capacity;
     size_t recorded;
     int16_t samples[AUDIO_CHUNK/2];
     learning_command_t command;
@@ -57,6 +61,31 @@ struct runtime_t {
 // App-lifetime singleton. UI owns model; worker owns cloud, speaker and camera;
 // capture owns mic. Atomics, queues and audio_lock are the only cross-task state.
 static struct runtime_t *runtime;
+// audio_lock owns pointer, capacity and recorded bytes. Reserve two seconds
+// initially, grow up to the same 30-second limit, and return idle capacity to
+// the camera. Neither the ISR nor the render task allocates recording storage.
+static bool reserve_recording(struct runtime_t *r,size_t required)
+{
+    if(required<=r->wav_capacity)return true;
+    size_t capacity=r->wav_capacity+AUDIO_GROW_BYTES;
+    if(capacity>AUDIO_CAP+WAV_HEADER)capacity=AUDIO_CAP+WAV_HEADER;
+    if(required>capacity)return false;
+    uint8_t *wav=heap_caps_realloc(r->wav,capacity,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+    if(!wav)return false;
+    r->wav=wav;r->wav_capacity=capacity;return true;
+}
+static void trim_recording(struct runtime_t *r)
+{
+    if(r->wav_capacity<=AUDIO_GROW_BYTES+WAV_HEADER)return;
+    uint8_t *wav=heap_caps_realloc(r->wav,AUDIO_GROW_BYTES+WAV_HEADER,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+    if(wav){r->wav=wav;r->wav_capacity=AUDIO_GROW_BYTES+WAV_HEADER;}
+}
+static void release_idle_recording(struct runtime_t *r)
+{
+    xSemaphoreTake(r->audio_lock,portMAX_DELAY);
+    if(!atomic_load(&r->recording)){r->recorded=0;trim_recording(r);}
+    xSemaphoreGive(r->audio_lock);
+}
 // RPC only schedules diagnostics; the existing worker retains exclusive camera
 // ownership. Status contains errors/byte counts only, never credentials or images.
 static esp_err_t diagnostic_rpc(const esp_iris_rpc_request_t *req,uint8_t *out,
@@ -103,6 +132,7 @@ static void diagnostic_run(struct runtime_t *r,unsigned action)
         goto done;
     }
     r->photo=NULL;r->photo_size=0;
+    release_idle_recording(r);
     err=learning_camera_delete(r->camera);if(err!=ESP_OK)goto done;r->camera=NULL;
     err=learning_camera_create(r->ui,&r->camera);
     if(err==ESP_OK)err=learning_camera_start(r->camera);
@@ -156,7 +186,8 @@ static void capture(void *ctx)
         if(!rec||(int32_t)((uint32_t)(esp_timer_get_time()/1000)-atomic_load(&r->record_after_ms))<0)continue;
         xSemaphoreTake(r->audio_lock,portMAX_DELAY);
         if(atomic_load(&r->recording)&&current(r,gen)){
-            if(r->recorded+sizeof(r->samples)>AUDIO_CAP)atomic_store(&r->overflow,true);
+            if(atomic_load(&r->overflow)||r->recorded+sizeof(r->samples)>AUDIO_CAP||
+               !reserve_recording(r,WAV_HEADER+r->recorded+sizeof(r->samples)))atomic_store(&r->overflow,true);
             else {memcpy(r->wav+WAV_HEADER+r->recorded,r->samples,sizeof(r->samples));r->recorded+=sizeof(r->samples);}
         }
         xSemaphoreGive(r->audio_lock);
@@ -239,6 +270,7 @@ static void worker(void *ctx)
         if(!current(r,c->generation))continue;
         const learning_config_t *config=learning_network_config();
         if(c->kind==LEARN_CMD_CANCEL){
+            release_idle_recording(r);
             if(!c->followup&&!c->keep_photo)learning_conversation_reset(r->conversation);
             r->previewing=false;r->photo=NULL;r->photo_size=0;
             if(learning_camera_delete(r->camera)==ESP_OK)r->camera=NULL;
@@ -264,6 +296,7 @@ static void worker(void *ctx)
             xQueueSend(r->messages,&r->message,pdMS_TO_TICKS(100));continue;
         }
         if(c->kind==LEARN_CMD_CAMERA){
+            release_idle_recording(r);
             learning_conversation_reset(r->conversation);
             r->photo=NULL;r->photo_size=0;r->previewing=false;
             if(!r->camera&&learning_camera_create(r->ui,&r->camera)!=ESP_OK){failure(r,c->generation,"相机内存不足，请重试");continue;}
@@ -317,6 +350,8 @@ static void worker(void *ctx)
             header(r);size_t size=r->recorded+WAV_HEADER;
             uint8_t *recording=valid?malloc(size):NULL;
             if(recording)memcpy(recording,r->wav,size);
+            r->recorded=0;
+            trim_recording(r);
             xSemaphoreGive(r->audio_lock);
             if(!valid){failure(r,c->generation,"录音不完整或太短，请重新提问");continue;}
             if(!recording){failure(r,c->generation,"录音内存不足，请稍后重试");continue;}
@@ -389,7 +424,14 @@ bool learning_platform_submit(const learning_command_t *c)
 esp_err_t learning_runtime_start(esp_gsp_handle_t ui)
 {
     if(runtime||!ui)return ESP_ERR_INVALID_ARG;
-    struct runtime_t *r=calloc(1,sizeof(*r));if(!r)return ESP_ERR_NO_MEM;
+    struct runtime_t *r=calloc(1,sizeof(*r));
+    if(!r){ESP_LOGE(TAG,"Runtime allocation failed");return ESP_ERR_NO_MEM;}
+    const char *stage="queues";
+    ESP_LOGI(TAG,"Starting runtime: internal_free=%u largest=%u queues=%u/%u bytes",
+        (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT),
+        (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT),
+        (unsigned)(COMMAND_DEPTH*sizeof(learning_command_t)),
+        (unsigned)(MESSAGE_DEPTH*sizeof(learning_message_t)));
     r->ui=ui;
     atomic_init(&r->generation,1);atomic_init(&r->key,false);atomic_init(&r->recording,false);
     atomic_init(&r->overflow,false);atomic_init(&r->ready,false);atomic_init(&r->speech_stopped,true);atomic_init(&r->wants_record,false);
@@ -397,14 +439,19 @@ esp_err_t learning_runtime_start(esp_gsp_handle_t ui)
     atomic_init(&r->visible_page,LEARN_SETTINGS);atomic_init(&r->diag_request,0);atomic_init(&r->diag_bytes,0);
     atomic_init(&r->diag_busy,false);atomic_init(&r->diag_result,ESP_ERR_NOT_FINISHED);
     atomic_init(&r->diag_preview,ESP_ERR_NOT_FINISHED);atomic_init(&r->diag_capture,ESP_ERR_NOT_FINISHED);atomic_init(&r->diag_http,0);
-    r->commands=xQueueCreate(COMMAND_DEPTH,sizeof(learning_command_t));
-    r->messages=xQueueCreate(MESSAGE_DEPTH,sizeof(learning_message_t));r->audio_lock=xSemaphoreCreateMutex();
-    r->wav=heap_caps_malloc(AUDIO_CAP+WAV_HEADER,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+    // These copied payloads are exchanged only by tasks, never by an ISR.
+    // Keep the ~40 KiB queue allocation in PSRAM so USB, audio DMA and worker
+    // stacks can retain internal SRAM on the dual-CDC ABI 2 runtime.
+    r->commands=xQueueCreateWithCaps(COMMAND_DEPTH,sizeof(learning_command_t),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+    r->messages=xQueueCreateWithCaps(MESSAGE_DEPTH,sizeof(learning_message_t),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+    r->audio_lock=xSemaphoreCreateMutex();
+    r->wav_capacity=AUDIO_GROW_BYTES+WAV_HEADER;
+    r->wav=heap_caps_malloc(r->wav_capacity,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
     esp_err_t err=ESP_ERR_NO_MEM;
     if(!r->commands||!r->messages||!r->audio_lock||!r->wav)goto fail;
-    err=learning_provider_create(current,r,&r->provider);if(err!=ESP_OK)goto fail;
-    err=learning_camera_create(ui,&r->camera);if(err!=ESP_OK)goto fail;
-    err=learning_conversation_create(&r->conversation);if(err!=ESP_OK)goto fail;
+    stage="provider";err=learning_provider_create(current,r,&r->provider);if(err!=ESP_OK)goto fail;
+    stage="camera";err=learning_camera_create(ui,&r->camera);if(err!=ESP_OK)goto fail;
+    stage="conversation";err=learning_conversation_create(&r->conversation);if(err!=ESP_OK)goto fail;
     r->mic=bsp_audio_codec_microphone_init();r->speaker=bsp_audio_codec_speaker_init();
     esp_codec_dev_sample_info_t format={.sample_rate=RATE,.bits_per_sample=16,.channel=1};
     if(r->mic&&esp_codec_dev_open(r->mic,&format)==ESP_CODEC_DEV_OK){
@@ -414,15 +461,23 @@ esp_err_t learning_runtime_start(esp_gsp_handle_t ui)
         r->speaker_open=true;
         learning_controls_t controls;learning_platform_controls_get(&controls);r->applied_volume=controls.volume;
         if(esp_codec_dev_set_out_vol(r->speaker,(int)controls.volume)!=ESP_CODEC_DEV_OK){esp_codec_dev_close(r->speaker);r->speaker_open=false;}}
+    stage="buttons";
     int count=0;err=bsp_iot_button_create(r->buttons,&count,BSP_BUTTON_NUM);if(err!=ESP_OK)goto fail;
     err=iot_button_register_cb(r->buttons[BSP_BUTTON_AI],BUTTON_PRESS_DOWN,NULL,key_changed,r);if(err!=ESP_OK)goto fail;
     err=iot_button_register_cb(r->buttons[BSP_BUTTON_AI],BUTTON_PRESS_UP,NULL,key_changed,r);if(err!=ESP_OK)goto fail;
+    stage="microphone task";
     if(xTaskCreate(capture,"learn_mic",4096,r,5,&r->capture_task)!=pdPASS){err=ESP_ERR_NO_MEM;goto fail;}
+    stage="worker task";
     if(xTaskCreate(worker,"learn_worker",WORKER_STACK,r,4,&r->worker_task)!=pdPASS){err=ESP_ERR_NO_MEM;goto fail;}
+    stage="diagnostic RPC";
     err=esp_iris_rpc_register(DIAGNOSTIC_SERVICE,1,diagnostic_rpc,r);if(err!=ESP_OK)goto fail;r->diag_registered=1;
     err=esp_iris_rpc_register(DIAGNOSTIC_SERVICE,2,diagnostic_rpc,r);if(err!=ESP_OK)goto fail;r->diag_registered=2;
-    runtime=r;atomic_store(&r->ready,true);xTaskNotifyGive(r->capture_task);xTaskNotifyGive(r->worker_task);return ESP_OK;
+    runtime=r;atomic_store(&r->ready,true);xTaskNotifyGive(r->capture_task);xTaskNotifyGive(r->worker_task);
+    ESP_LOGI(TAG,"Runtime ready: microphone=%u speaker=%u",r->mic_open,r->speaker_open);return ESP_OK;
 fail:
+    ESP_LOGE(TAG,"Startup failed at %s: %s; internal_free=%u largest=%u",stage,esp_err_to_name(err),
+        (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT),
+        (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
     if(r->diag_registered>1)esp_iris_rpc_unregister(DIAGNOSTIC_SERVICE,2);
     if(r->diag_registered)esp_iris_rpc_unregister(DIAGNOSTIC_SERVICE,1);
     if(r->capture_task)vTaskDelete(r->capture_task);
@@ -432,8 +487,8 @@ fail:
     if(r->speaker_open)esp_codec_dev_close(r->speaker);
     learning_camera_delete(r->camera);learning_provider_delete(r->provider);
     learning_conversation_delete(r->conversation);
-    if(r->commands)vQueueDelete(r->commands);
-    if(r->messages)vQueueDelete(r->messages);
+    if(r->commands)vQueueDeleteWithCaps(r->commands);
+    if(r->messages)vQueueDeleteWithCaps(r->messages);
     if(r->audio_lock)vSemaphoreDelete(r->audio_lock);
     free(r->wav);free(r);return err;
 }
